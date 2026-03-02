@@ -97,3 +97,13 @@ Approches envisagées :
 2. **Classification séquentielle** : à chaque éclair, P(dernier éclair CG de l'alerte)
 3. **Gradient boosting** (XGBoost/LightGBM) avec features engineered
 4. **Analyse par aéroport** : clustering des types d'orages par lieu
+
+## Stack & outils de visualisation
+
+- **marimo** : notebook réactif (DAG), polars, altair, mo.sql (DuckDB)
+- **openlayers** (`openlayers` package) : widget marimo pour cartes interactives
+  - `VectorLayer` / `VectorSource` : points d'éclairs sur carte
+  - `HeatmapLayer(weight=["get", "field"])` : heatmap pondérée (amplitude, densité)
+  - `MapWidget` + `add_tooltip()` : carte interactive avec infos au survol
+  - Couplable avec `mo.ui.slider` pour animation temporelle / filtrage
+  - Ref : https://github.com/marimo-team/gallery-examples/blob/main/notebooks/geo/earthquake.py
