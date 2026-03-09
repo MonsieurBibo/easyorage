@@ -1,0 +1,32 @@
+{
+  "feature_cols": [
+    "dist",
+    "amplitude_abs",
+    "azimuth",
+    "maxis",
+    "time_since_start_s",
+    "lightning_rank",
+    "ili_s",
+    "hour_utc",
+    "month",
+    "n_cg_so_far",
+    "mean_amplitude_so_far",
+    "mean_dist_so_far",
+    "rolling_ili_3",
+    "rolling_ili_5",
+    "rolling_ili_10",
+    "rolling_ili_std_5",
+    "rolling_amp_3",
+    "rolling_amp_5",
+    "rolling_amp_10",
+    "rolling_amp_std_5",
+    "rolling_dist_5",
+    "rolling_dist_10",
+    "ili_trend",
+    "amp_trend",
+    "dist_trend",
+    "flash_rate_global",
+    "dist_spread"
+  ],
+  "target_col": "is_last_lightning_cloud_ground"
+}

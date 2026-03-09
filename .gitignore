@@ -25,3 +25,5 @@ __marimo__/
 
 # Data (large files)
 # data_train_databattle2026/  # keeping in git for now since it's the competition data
+data/terrain/*.npy
+data/weather/

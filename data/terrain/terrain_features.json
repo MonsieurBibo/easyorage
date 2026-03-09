@@ -1,0 +1,62 @@
+{
+  "Ajaccio": {
+    "airport": "Ajaccio",
+    "elevation_at_airport": 0.0,
+    "elev_mean_50km": 407.5,
+    "elev_std_50km": 524.0,
+    "elev_max_50km": 2435.0,
+    "elev_range_50km": 2437.0,
+    "tri_mean": 89.62,
+    "coast_dist_km": 0.1,
+    "mountain_frac": 0.33,
+    "high_mountain_frac": 0.156
+  },
+  "Bastia": {
+    "airport": "Bastia",
+    "elevation_at_airport": 1.0,
+    "elev_mean_50km": 225.1,
+    "elev_std_50km": 395.0,
+    "elev_max_50km": 2369.0,
+    "elev_range_50km": 2373.0,
+    "tri_mean": 55.44,
+    "coast_dist_km": 0.1,
+    "mountain_frac": 0.19,
+    "high_mountain_frac": 0.063
+  },
+  "Biarritz": {
+    "airport": "Biarritz",
+    "elevation_at_airport": 76.0,
+    "elev_mean_50km": 187.8,
+    "elev_std_50km": 282.8,
+    "elev_max_50km": 1467.0,
+    "elev_range_50km": 1470.0,
+    "tri_mean": 49.19,
+    "coast_dist_km": 3.3,
+    "mountain_frac": 0.154,
+    "high_mountain_frac": 0.021
+  },
+  "Nantes": {
+    "airport": "Nantes",
+    "elevation_at_airport": 22.0,
+    "elev_mean_50km": 37.4,
+    "elev_std_50km": 26.1,
+    "elev_max_50km": 114.0,
+    "elev_range_50km": 144.0,
+    "tri_mean": 7.68,
+    "coast_dist_km": 1.3,
+    "mountain_frac": 0.0,
+    "high_mountain_frac": 0.0
+  },
+  "Pise": {
+    "airport": "Pise",
+    "elevation_at_airport": 0.0,
+    "elev_mean_50km": 174.6,
+    "elev_std_50km": 311.9,
+    "elev_max_50km": 1893.0,
+    "elev_range_50km": 1899.0,
+    "tri_mean": 45.01,
+    "coast_dist_km": 0.1,
+    "mountain_frac": 0.13,
+    "high_mountain_frac": 0.036
+  }
+}
