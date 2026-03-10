@@ -32,7 +32,7 @@ def load_data(pl):
     import pathlib
     DATA_PATH = str(pathlib.Path(__file__).parent.parent / "data_train_databattle2026" / "segment_alerts_all_airports_train.csv")
 
-    N_ROWS = 20_000  # limiter pour l'EDA, passer à None pour le dataset complet
+    N_ROWS = None
 
     df = pl.read_csv(
         DATA_PATH,
@@ -378,6 +378,98 @@ def dist_histogram(alt, df_filtered, mo, pl):
     )
 
     mo.output.replace(chart_dist)
+    return
+
+
+@app.cell
+def _(df, mo, pl):
+    """Réponses aux questions clés du formulaire DataBattle."""
+    df_alerts_global = df.filter(pl.col("airport_alert_id").is_not_null())
+
+    alert_stats_global = (
+        df_alerts_global.group_by("airport_alert_id", "airport")
+        .agg(
+            pl.col("date").min().alias("debut"),
+            pl.col("date").max().alias("fin"),
+        )
+        .with_columns(
+            ((pl.col("fin") - pl.col("debut")).dt.total_seconds() / 60).alias("duree_min")
+        )
+    )
+
+    nb_alertes = len(alert_stats_global)
+    duree_mediane = round(alert_stats_global["duree_min"].median(), 1)
+
+    mo.output.replace(
+        mo.vstack([
+            mo.md("## Réponses aux questions clés"),
+            mo.callout(
+                mo.md(f"""
+    **Nombre d'alertes orageuses dans les données :** `{nb_alertes}`
+
+    **Durée médiane d'une alerte :** `{duree_mediane} minutes`
+
+    *(calculé sur l'ensemble du dataset, toutes alertes avec `airport_alert_id` non-null)*
+    """),
+                kind="info",
+            ),
+        ])
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.output.replace(
+        mo.vstack([
+            mo.md("## Approche & Références"),
+            mo.callout(
+                mo.md("""
+    ### Référence similaire
+
+    **Shafer & Fuelberg (2019)** — *A logistic regression model for lightning cessation using the Geostationary Lightning Mapper* (Journal of Geophysical Research: Atmospheres).
+    Modèle probabiliste qui classe chaque éclair comme potentiellement le dernier : approche très proche du nôtre, mais avec données GLM satellite + radar dual-pol.
+
+    GitHub proche : [Lightning Cessation · NOAA WFO Tampa](https://github.com/thunderbolt-wx/lightning-cessation) — implémentation de règles de cessation avec données LMA/radar.
+    """),
+                kind="success",
+            ),
+            mo.callout(
+                mo.md("""
+    ### Approche envisagée
+
+    **Survival analysis + gradient boosting séquentiel**
+
+    À chaque nouvel éclair dans une alerte, on estime P(cessation dans les N prochaines minutes) à partir de features construites dynamiquement :
+
+    - **Temporelles** : intervalle inter-éclairs, flash rate (rolling 5/10/30 min), tendance (décroissance)
+    - **Spatiales** : dispersion spatiale des éclairs récents, dérive du centroïde par rapport à l'aéroport
+    - **Physiques** : ratio IC/CG glissant, amplitude moyenne et sa tendance
+    - **Survie** : temps depuis le début de l'alerte, dernier éclair CG connu
+
+    Modèle principal : **XGBoost / LightGBM** avec target `is_last_lightning_cloud_ground`.
+    Modèle complémentaire : **Cox Proportional Hazards** (gap identifié dans la littérature — aucune étude n'applique formellement du survival analysis à ce problème).
+    """),
+                kind="neutral",
+            ),
+            mo.callout(
+                mo.md("""
+    ### Évaluation
+
+    Métriques adaptées au coût asymétrique (fausse cessation = danger réel) :
+
+    - **FAR** (False Alarm Ratio) — priorité absolue : ne pas déclarer la cessation trop tôt
+    - **POD** (Probability of Detection) — capturer les vraies cessations
+    - **CSI** (Critical Success Index) = hits / (hits + misses + false alarms)
+    - **Lead time moyen** : minutes gagnées vs baseline "30 minutes après le dernier éclair"
+
+    Validation : **leave-one-airport-out cross-validation** (5 splits) pour tester la généralisation géographique.
+    Baseline : règle des 30 min (POD ≈ 1.0, lead time = 0 min par définition).
+    """),
+                kind="warn",
+            ),
+        ])
+    )
     return
 
 
