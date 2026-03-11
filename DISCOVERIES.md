@@ -311,6 +311,34 @@ Le cadre survival analysis est **naturellement adapté** au problème :
 - Integrated Brier Score : calibration des probabilités de survie
 - Expected lead time gain vs baseline 30 min
 
+### Résultats expérimentaux (2026-03-11)
+
+Reformulation survival : `duration = ILI_{i+1}` (temps jusqu'au prochain éclair), `event = 1` si pas
+le dernier (observé), `event = 0` si dernier (censuré à 1800s = 30 min).
+
+**Kaplan-Meier (baseline)** : P(T > 1800s) = 4.9% → 4.9% des flashes sont les derniers (cohérent).
+
+| Modèle | C-index | AUC last flash | Features |
+|--------|---------|----------------|----------|
+| Cox PH (penalizer=0.1) | **0.7388** | 0.9080 | 18 lightning |
+| XGBoost AFT (normal, σ=1.2) | **0.7414** | 0.8880 | 102 toutes |
+| XGBoost classifieur | 0.7198 | **0.9205** | 102 toutes |
+
+**Interprétation** :
+- XGBoost AFT a le meilleur C-index (0.7414) : meilleur classement des durées de survie
+- XGBoost classifieur a le meilleur AUC (0.9205) : optimisé directement pour l'objectif binaire
+- Cox PH avec seulement 18 features = très compétitif (C-index 0.7388), interprétable
+
+**Conclusion** : le classificateur XGBoost IS un modèle de survie implicite (il prédit P(T>1800s)).
+La survival analysis formelle ne bat pas le classificateur mais offre :
+1. Un C-index légèrement meilleur (0.7414 vs 0.7198)
+2. La prédiction du temps restant estimé (pas seulement binaire)
+3. Une interprétabilité des features via hazard ratios (Cox PH)
+
+**Bug découvert (XGBoost AFT)** : les `label_lower_bound` / `label_upper_bound` doivent être en
+**échelle originale (secondes)**, pas en log-scale. Passer `np.log(duration)` → tous les
+gradients = 0 → preds = NaN. XGBoost applique le log en interne.
+
 ---
 
 ## PARTIE 3 : Leinonen 2022/2023 — Architecture et features DEM

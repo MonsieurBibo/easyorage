@@ -1605,5 +1605,255 @@ def shap_analysis(
     return
 
 
+@app.cell
+def survival_analysis(
+    splits, FEATURE_COLS, LIGHTNING_COLS, TARGET_COL, AIRPORTS,
+    np, pl, mo,
+):
+    """
+    Survival Analysis — reformulation correcte du problème de cessation.
+
+    Pourquoi le survival analysis est plus approprié que la classification binaire :
+    - On ne veut PAS prédire "est-ce le dernier éclair ?" (classificiation per-flash)
+    - On veut prédire "combien de temps avant le prochain éclair ?" (time-to-event)
+    - P(T > 1800s | X) = P(aucun éclair dans les 30 min) = fin d'alerte probable
+
+    Formulation :
+    - duration[i] = ILI du flash suivant (ili_s[i+1] dans l'alerte)
+      Si dernier flash : duration = 1800s (censuré à droite à 30 min)
+    - event[i] = 1 si un prochain flash est venu (non-censuré)
+                 0 si dernier flash (censuré — on sait T > 1800s, pas la vraie valeur)
+
+    Modèles :
+    1. Kaplan-Meier  : courbe de survie globale (baseline)
+    2. Cox PH        : modèle semi-paramétrique avec covariables
+    3. XGBoost AFT   : modèle paramétrique flexible (Accelerated Failure Time)
+
+    Avantage vs AUC : le C-index est le vrai rang de cessation.
+    Avantage opérationnel : calibré pour P(T > 1800s), pas pour le ranking binaire.
+
+    Références :
+    - Schoenfeld 1982 (Cox PH) — standard en épidémiologie
+    - Gap littérature : aucune étude publiée n'a appliqué le survival analysis
+      au problème de cessation de foudre (identifié dans notre revue de littérature)
+    """
+    try:
+        import lifelines
+        from lifelines import KaplanMeierFitter, CoxPHFitter, WeibullAFTFitter
+        from lifelines.utils import concordance_index
+        import xgboost as xgb
+        from sklearn.metrics import roc_auc_score
+        LIFELINES_OK = True
+    except ImportError:
+        LIFELINES_OK = False
+
+    if not LIFELINES_OK:
+        mo.output.replace(mo.callout(mo.md("lifelines non installé — skip survival analysis"), kind="warn"))
+        mo.stop(True)
+
+    G = ["airport", "airport_alert_id"]
+
+    # ── Préparation du dataset de survie ────────────────────────────────────
+    def make_survival_df(df: "pl.DataFrame") -> "pl.DataFrame":
+        """
+        Ajoute duration et event au DataFrame.
+        duration = temps jusqu'au prochain éclair (ILI du flash suivant)
+        event    = 1 si un flash suivant existe, 0 si dernier (censuré à 1800s)
+        """
+        return (
+            df.sort("airport", "airport_alert_id", "date")
+            .with_columns([
+                # ILI du prochain flash = temps jusqu'au prochain éclair
+                pl.col("ili_s").shift(-1).over(G).fill_null(1800.0).alias("duration"),
+                # event = 1 si NON dernier flash (un prochain flash est venu)
+                (pl.col(TARGET_COL) == 0).cast(pl.Int8).alias("event"),
+            ])
+        )
+
+    # Concaténer train et eval de tous les aéroports
+    trains = pl.concat([splits[ap]["train"] for ap in AIRPORTS])
+    evals  = pl.concat([splits[ap]["eval"]  for ap in AIRPORTS])
+
+    surv_train = make_survival_df(trains)
+    surv_eval  = make_survival_df(evals)
+
+    # Features pour Cox (sous-ensemble pour éviter la multicolinéarité)
+    # On garde les features lightning les plus importantes par gain XGBoost
+    COX_FEATURES = [
+        "fr_log_slope", "rolling_ili_5", "rolling_ili_3", "flash_rate_3",
+        "rolling_ili_10", "ili_s", "lightning_rank", "ili_vs_p95",
+        "fr_vs_max_ratio", "ili_trend", "sigma_level", "ili_cv_5",
+        "ili_vs_alert_max", "ili_z_score_5", "rolling_max_vs_alert_max",
+        "n_cg_so_far", "time_since_start_s", "positive_cg_frac",
+    ]
+    # Garder seulement les features disponibles
+    COX_FEATURES = [f for f in COX_FEATURES if f in FEATURE_COLS]
+
+    # Préparer les données pour lifelines (pandas)
+    import pandas as pd
+    train_pd = surv_train.select(COX_FEATURES + ["duration", "event"]).fill_nan(0).fill_null(0).to_pandas()
+    eval_pd  = surv_eval.select(COX_FEATURES + ["duration", "event"]).fill_nan(0).fill_null(0).to_pandas()
+
+    # ── 1. Kaplan-Meier (baseline) ────────────────────────────────────────
+    kmf = KaplanMeierFitter()
+    kmf.fit(train_pd["duration"], event_observed=train_pd["event"], label="All flashes")
+
+    # Probabilité de survie à 1800s (fin d'alerte)
+    km_s1800 = float(kmf.survival_function_at_times([1800]).values[0])
+
+    # ── 2. Cox PH ─────────────────────────────────────────────────────────
+    cph = CoxPHFitter(penalizer=0.1)
+    cph.fit(train_pd, duration_col="duration", event_col="event", show_progress=False)
+
+    # C-index Cox sur eval
+    cox_pred = cph.predict_partial_hazard(eval_pd)
+    cox_cidx = concordance_index(eval_pd["duration"], -cox_pred, eval_pd["event"])
+
+    # P(T > 1800s | X) par flash sur eval
+    cox_surv = cph.predict_survival_function(eval_pd, times=[1800])
+    cox_p_cessation = cox_surv.values[0]  # shape (n_eval,)
+
+    # AUC de cox_p_cessation comme classifieur de dernier éclair
+    y_eval = (surv_eval[TARGET_COL].cast(pl.Int8).to_numpy())
+    cox_auc = roc_auc_score(y_eval, cox_p_cessation)
+
+    # ── 3. XGBoost AFT ────────────────────────────────────────────────────
+    # AFT (Accelerated Failure Time) : modélise log(T) directement.
+    # IMPORTANT: les bounds doivent être en échelle ORIGINALE (secondes),
+    # XGBoost applique le log en interne. Passer np.log() causerait NaN partout.
+    # Ref: https://xgboost.readthedocs.io/en/stable/tutorials/aft_survival_analysis.html
+    X_tr = surv_train.select(FEATURE_COLS).fill_nan(0).fill_null(0).to_numpy()
+    X_ev = surv_eval.select(FEATURE_COLS).fill_nan(0).fill_null(0).to_numpy()
+
+    y_dur_tr  = surv_train["duration"].to_numpy()  # secondes (échelle originale)
+    y_ev_arr  = surv_train["event"].to_numpy()
+    # Bornes en échelle originale : event=1 → bornes exactes, event=0 → censure à droite
+    y_lower_tr = y_dur_tr.astype(np.float64)
+    y_upper_tr = np.where(y_ev_arr == 1, y_dur_tr, +np.inf).astype(np.float64)
+
+    dtrain = xgb.DMatrix(X_tr)
+    dtrain.set_float_info("label_lower_bound", y_lower_tr)
+    dtrain.set_float_info("label_upper_bound", y_upper_tr)
+
+    aft_model = xgb.train(
+        {"objective": "survival:aft",
+         "aft_loss_distribution": "normal",
+         "aft_loss_distribution_scale": 1.2,
+         "max_depth": 6, "learning_rate": 0.05,
+         "subsample": 0.8, "colsample_bytree": 0.8,
+         "tree_method": "hist", "seed": 42},
+        dtrain,
+        num_boost_round=400,
+        verbose_eval=False,
+    )
+
+    deval = xgb.DMatrix(X_ev)
+    aft_pred = aft_model.predict(deval)  # T prédit en secondes
+
+    # P(T > 1800s) sous distribution normale log-AFT :
+    # P(T > t) = P(log(T) > log(t)) = Phi((E[log(T)] - log(t)) / sigma)
+    # Approximation logistique : 1 / (1 + exp((log(t) - E[log(T)]) / sigma))
+    AFT_SIGMA = 1.2
+    aft_p_cessation = 1.0 / (
+        1.0 + np.exp((np.log(1800.0) - np.log(np.clip(aft_pred, 1e-3, None))) / AFT_SIGMA)
+    )
+
+    # C-index : plus T prédit est grand → moins de risque → plus susceptible d'être dernier
+    aft_cidx = concordance_index(
+        surv_eval["duration"].to_numpy(),
+        aft_pred,
+        surv_eval["event"].to_numpy()
+    )
+    aft_auc = roc_auc_score(y_eval, aft_p_cessation)
+
+    # ── 4. Comparaison avec XGBoost classifieur ───────────────────────────
+    from sklearn.preprocessing import StandardScaler
+    # Classifieur standard (pour comparaison)
+    pw = float((surv_train[TARGET_COL].cast(pl.Int8) == 0).sum()) / surv_train[TARGET_COL].sum()
+    clf = xgb.XGBClassifier(n_estimators=400, max_depth=6, learning_rate=0.05,
+        scale_pos_weight=pw, tree_method="hist", random_state=42, n_jobs=-1, eval_metric="auc")
+    clf.fit(
+        surv_train.select(FEATURE_COLS).fill_nan(0).fill_null(0).to_numpy(),
+        surv_train[TARGET_COL].cast(pl.Int8).to_numpy()
+    )
+    clf_proba = clf.predict_proba(X_ev)[:,1]
+    clf_auc   = roc_auc_score(y_eval, clf_proba)
+    clf_cidx  = concordance_index(
+        surv_eval["duration"].to_numpy(),
+        clf_proba,
+        surv_eval["event"].to_numpy()
+    )
+
+    # ── 5. Simulation opérationnelle : K=2 consécutifs ────────────────────
+    def simulate_operational(scores, label, thresh=0.5, k=2):
+        ev2 = surv_eval.with_columns(pl.Series("score", scores))
+        gains, fa = [], []
+        for ap in AIRPORTS:
+            for aid in ev2.filter(pl.col("airport")==ap)["airport_alert_id"].unique():
+                sub = (ev2.filter((pl.col("airport")==ap) & (pl.col("airport_alert_id")==aid))
+                          .sort("date"))
+                if sub[TARGET_COL].sum() == 0: continue
+                t_last = sub.filter(pl.col(TARGET_COL)==1)["date"][0]
+                dates = sub["date"].to_list()
+                sc    = sub["score"].to_list()
+                t_fire, consec = None, 0
+                for d, s in zip(dates, sc):
+                    consec = consec+1 if s >= thresh else 0
+                    if consec >= k:
+                        t_fire = d; break
+                if t_fire is None: continue
+                delta = (t_fire - t_last).total_seconds() / 60
+                if delta >= 0: gains.append(max(0, 30 - delta))
+                else: fa.append(abs(delta))
+        n = len(gains) + len(fa)
+        far = len(fa)/n*100 if n else 0
+        avg_gain = np.mean(gains) if gains else 0
+        return far, len(gains), avg_gain
+
+    clf_far, clf_ok, clf_g = simulate_operational(clf_proba,      "XGB clf",  thresh=0.7, k=2)
+    aft_far, aft_ok, aft_g = simulate_operational(aft_p_cessation, "AFT",      thresh=0.5, k=2)
+    cox_far, cox_ok, cox_g = simulate_operational(cox_p_cessation, "Cox",      thresh=0.5, k=2)
+
+    # ── Affichage ─────────────────────────────────────────────────────────
+    results_md = f"""
+## Survival Analysis — Résultats
+
+**Reformulation** : on prédit P(T_next > 1800s | X) = probabilité qu'aucun éclair
+ne revienne dans les 30 prochaines minutes. C'est l'objectif opérationnel direct.
+
+### Kaplan-Meier (baseline globale)
+- P(survie > 30 min) pour un flash quelconque = **{km_s1800:.1%}**
+  (= taux de cessation brut : {km_s1800:.1%} des flashes sont les derniers)
+
+### Comparaison des modèles
+
+| Modèle | C-index | AUC (classif last) | Features |
+|--------|---------|-------------------|----------|
+| Cox PH (penalizer=0.1) | **{cox_cidx:.4f}** | {cox_auc:.4f} | {len(COX_FEATURES)} lightning |
+| XGBoost AFT (normal, σ=1.2) | **{aft_cidx:.4f}** | {aft_auc:.4f} | {len(FEATURE_COLS)} toutes |
+| XGBoost classifieur    | {clf_cidx:.4f} | **{clf_auc:.4f}** | {len(FEATURE_COLS)} toutes |
+
+*C-index = AUC pour survival (P(score_i > score_j) quand T_i > T_j)*
+
+### Simulation opérationnelle (θ=0.5/0.7, K=2 consécutifs)
+
+| Modèle | FAR | Alertes OK | Gain moy |
+|--------|-----|-----------|---------|
+| XGBoost classifieur (θ=0.7) | {clf_far:.0f}% | {clf_ok} | +{clf_g:.0f} min |
+| XGBoost AFT P(T>1800) (θ=0.5) | {aft_far:.0f}% | {aft_ok} | +{aft_g:.0f} min |
+| Cox PH P(T>1800) (θ=0.5) | {cox_far:.0f}% | {cox_ok} | +{cox_g:.0f} min |
+
+### Top features Cox PH (hazard ratio)
+"""
+    cox_summary = cph.summary[["exp(coef)", "p"]].sort_values("exp(coef)", ascending=False)
+
+    mo.output.replace(mo.vstack([
+        mo.md(results_md),
+        mo.md("**Cox PH — Hazard ratios (>1 = augmente le risque d'un prochain flash) :**"),
+        mo.ui.table(cox_summary.reset_index().rename(columns={"covariate": "feature"}).head(15)),
+    ]))
+    return cox_cidx, aft_cidx, aft_p_cessation, cox_p_cessation
+
+
 if __name__ == "__main__":
     app.run()
