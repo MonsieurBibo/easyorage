@@ -1185,3 +1185,80 @@ Justifications :
 - Lightning VLF-only 2025 : doi:10.1016/j.atmosres.2025.107740 (Atmos. Res.)
 
 ---
+
+## Analyse opérationnelle : gain de temps vs règle des 30 minutes (2026-03-11)
+
+### Ce que mesure l'AUC — clarification importante
+
+**AUC = 0.914 ne signifie PAS "précision de 91%".**
+
+L'AUC mesure : P(score(dernier éclair) > score(éclair quelconque)) = 91.4%.
+C'est une métrique de **ranking**, pas de classification binaire.
+
+En pratique avec seuil = 0.5 :
+- Précision = 24% (1 bonne décision sur 4 triggers)
+- Rappel = 68% (on rate 32% des vrais derniers éclairs)
+
+Raison : le dataset est très déséquilibré (3.7% positifs = derniers éclairs).
+
+### Simulation opérationnelle : K éclairs consécutifs >= seuil
+
+Pour déclarer la cessation, on exige K éclairs consécutifs avec score >= θ.
+Résultats sur 527 alertes éval (XGBoost default 400 arbres) :
+
+| Stratégie | FAR | Alertes couvertes | Gain moyen |
+|-----------|-----|-------------------|-----------|
+| θ=0.5, K=1 (baseline) | 64% | 170/527 (32%) | +30 min |
+| θ=0.7, K=2 consécutifs | 21% | 48/527 (9%) | +30 min |
+| θ=0.7, K=3 consécutifs | 8% | 22/527 (4%) | +30 min |
+| θ=0.85, K=3 consécutifs | 2% | 0/527 (0%) | — |
+| **Conserv. θ=0.5, K=2** | **5%** | **13/527 (2.5%)** | **+30 min** |
+| Conserv. θ=0.5, K=3 | 1% | 3/527 (0.6%) | +30 min |
+
+"Conservateur" = modèle entraîné avec scale_pos_weight=2.0 au lieu de 19.3
+→ AUC légèrement meilleur (0.908 vs 0.903) mais probabilités mieux calibrées.
+
+**Interprétation** : quand le modèle se déclenche correctement, il tire EXACTEMENT
+sur le dernier éclair → gain toujours ≈ 30 min. Mais la couverture est faible.
+
+### Contexte vs littérature
+
+Les meilleurs systèmes publiés (Stano 2010, Shafer 2019) gagnent **10-15 min**
+avec FAR ~5-10% en utilisant radar dual-pol + capteurs. Nous gagnons potentiellement
+30 min mais sur seulement 4-9% des alertes, avec données lightning uniquement.
+
+### Météo live (Open-Meteo) — analyse coût/bénéfice
+
+**Techniquement faisable** : `scripts/fetch_weather.py` peut retrouver les données
+ERA5 historiques pour n'importe quelle date/coordonnée via Open-Meteo API.
+Pour un jeu de test avec des dates connues, on pourrait enrichir les features.
+
+**Mais l'ablation montre que la météo ERA5 N'AIDE PAS** :
+- Lightning seul : AUC=0.902
+- Lightning + Weather : AUC=0.902 (+0.000)
+- Nantes spécifiquement : -0.009 avec météo (bruit dominant le signal)
+
+→ **Ne pas ajouter la météo live.** Gain nul, complexité inutile.
+
+### CNN orographie — pourquoi ça ne marche pas
+
+Les grilles DEM 91×91 existent pour 5 aéroports. L'idée d'un CNN pour extraire
+des patterns spatiaux de terrain est bonne en principe, mais structurellement limitée :
+
+**5 aéroports = 5 images uniques**. Un CNN entraîné sur 5 images mémoriserait
+les 5 profils (= apprend à identifier l'aéroport, pas l'orographie).
+Ce que les 26 features terrain agrégées font déjà.
+
+Fonctionnerait avec CNN si : position de l'éclair → image DEM centrée sur l'éclair
+(56k images différentes). Mais les éclairs bougent dans le rayon de 20km,
+et les grilles DEM sont centrées sur l'aéroport à 50km de rayon → pas aligné.
+
+### Ce qui reste pour améliorer
+
+Par ordre de ROI décroissant :
+1. **Optuna bien fini sur 102 features** (60 trials) → estimé +0.003-0.005 AUC
+2. **Ensemble XGB + GRU** → +0.003-0.008 si erreurs décorrélées
+3. **Features lightning fines** : rolling_ili_median_5, n_flashes_last_2min
+4. **Modèle Nantes séparé** (seul sous-performant : AUC=0.84 vs 0.94 Bastia)
+5. CNN, météo live : non prioritaires
+
