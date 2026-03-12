@@ -1,18 +1,40 @@
+# Data
+data/raw/
+data/processed/*.parquet
+dataset_test/
+dataset_test.zip
+data_train_databattle2026/
+frontend.7z
+
+# Models (binaires)
+models/*.joblib
+models/*.db
+models/*.pkl
+
+# Logs
+logs/
+
 # Python
 __pycache__/
 *.py[cod]
+*.pyo
+.venv/
 *.egg-info/
 dist/
 build/
-.eggs/
+.uv/
 
-# Virtual environments
-.venv/
-.python-version
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# Backend
+backend/.venv/
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 
@@ -20,11 +42,6 @@ build/
 .DS_Store
 Thumbs.db
 
-# Marimo
-__marimo__/
-
-# Data (large files)
-# data_train_databattle2026/  # keeping in git for now since it's the competition data
-data/terrain/*.npy
-data/weather/
-data/processed/*_weather.parquet
+# Jupyter
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
