@@ -43,16 +43,19 @@ Usage :
 # dependencies = [
 #     "polars",
 #     "pyarrow",
+#     "numpy<2",
+#     "pandas",
 # ]
 # ///
 
 import json
 import math
 import pathlib
+import numpy as np
 import polars as pl
 
 ROOT = pathlib.Path(__file__).parent.parent
-DATA_PATH = ROOT / "data_train_databattle2026" / "segment_alerts_all_airports_train.csv"
+DATA_PATH = ROOT / "data" / "raw" / "segment_alerts_all_airports_train.csv"
 OUT_DIR = ROOT / "data" / "processed"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -341,22 +344,26 @@ def compute_features(df: pl.DataFrame) -> pl.DataFrame:
         ).alias("sigma_level"),
     ).drop("_dfr")
 
-    # ── 7. MIFI percentile — normalisation airport-spécifique ─────────────────
-    # ILI max normalisé par la distribution historique de chaque aéroport.
-    # Source des percentiles : compute_features.py première passe sur train (2026-03-10)
-    # Formula : rolling_ili_max_5 / P95_airport → > 1.0 = pause anormalement longue
-    # Justification : normalise le signal ILI par le contexte local de chaque aéroport
-    # → Nantes a des ILI plus courts (médiane 24s vs 32s Ajaccio), donc P95=418s vs 383s
-    _ili_p95_expr  = pl.lit(None, dtype=pl.Float64)
-    _ili_p75_expr  = pl.lit(None, dtype=pl.Float64)
-    for _ap_name, (_p75, _p95, _) in ILI_PERCENTILES.items():
-        _ili_p95_expr = pl.when(pl.col("airport") == _ap_name).then(pl.lit(_p95)).otherwise(_ili_p95_expr)
-        _ili_p75_expr = pl.when(pl.col("airport") == _ap_name).then(pl.lit(_p75)).otherwise(_ili_p75_expr)
+    # ── 7. MIFI percentile — percentiles causaux intra-alerte ─────────────────
+    # ILI max normalisé par le percentile courant de l'alerte (causal, sans lookahead).
+    # Pour chaque éclair i, P75/P95 = percentile des ILI vus depuis le début de l'alerte.
+    # Avantage vs valeurs hardcodées : fonctionne sur tout dataset sans dépendance au split.
+    # Fallback : si < 3 ILI dans l'alerte, ratio = 1.0 (neutre).
+    _pdf = df6.select(G + ["ili_s"]).to_pandas()
+    _p75_out = [1.0] * len(_pdf)
+    _p95_out = [1.0] * len(_pdf)
+    for (_, grp_pdf) in _pdf.groupby(G, sort=False):
+        vals = []
+        for idx, ili in zip(grp_pdf.index, grp_pdf["ili_s"]):
+            if ili is not None and not np.isnan(float(ili)):
+                vals.append(float(ili))
+            _p75_out[idx] = float(np.percentile(vals, 75)) if len(vals) >= 3 else vals[-1] if vals else 1.0
+            _p95_out[idx] = float(np.percentile(vals, 95)) if len(vals) >= 3 else vals[-1] if vals else 1.0
 
-    df7 = df6.with_columns(
-        (pl.col("rolling_ili_max_5") / (_ili_p95_expr.cast(pl.Float64) + 1e-6)).alias("ili_vs_p95"),
-        (pl.col("rolling_ili_max_5") / (_ili_p75_expr.cast(pl.Float64) + 1e-6)).alias("ili_vs_p75"),
-    )
+    df7 = df6.with_columns([
+        (pl.col("rolling_ili_max_5") / (pl.Series("_p75", _p75_out, dtype=pl.Float64) + 1e-6)).alias("ili_vs_p75"),
+        (pl.col("rolling_ili_max_5") / (pl.Series("_p95", _p95_out, dtype=pl.Float64) + 1e-6)).alias("ili_vs_p95"),
+    ])
 
     # ── 8. Décroissance du log flash rate (pente OLS simplifiée) ──────────────
     # fr_log_slope ≈ log(flash_rate_5) - log(flash_rate_10)
