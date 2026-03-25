@@ -1,62 +1,56 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Zap } from "lucide-react"
-
-interface Alert {
-  coord: string
-  loc: string
-  time: string
-  type: "CG" | "IC"
-}
-
-const alerts: Alert[] = [
-  { coord: "42.5527, 9.4837", loc: "Bastia, Ville", time: "il y a 4 min", type: "CG" },
-  { coord: "42.5610, 9.4920", loc: "Poretta Nord", time: "il y a 7 min", type: "IC" },
-  { coord: "42.5400, 9.4700", loc: "Zone Aéroportuaire", time: "il y a 12 min", type: "CG" },
-  { coord: "42.5800, 9.5000", loc: "Mer Tyrrhénienne", time: "il y a 15 min", type: "IC" },
-  { coord: "42.5200, 9.4500", loc: "Lucciana", time: "il y a 22 min", type: "CG" },
-]
+import { useLiveData } from "@/context/LiveDataContext"
 
 export function RecentAlerts() {
-  return (  
+  const { flashes } = useLiveData()
+  const recent = [...flashes].reverse().slice(0, 8)
+
+  return (
     <Card className="col-span-2 border-border bg-card">
       <CardHeader>
         <CardTitle className="text-base font-medium text-foreground">Alertes récentes</CardTitle>
         <CardDescription className="text-muted-foreground">
-          Derniers points d’impacts détectés
+          {flashes.length > 0 ? `${flashes.length} impacts reçus` : "En attente d'impacts…"}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-6">
-          {alerts.map((alert, i) => (
-            <div key={i} className="flex items-center">
-              <div 
-                className="h-9 w-9 rounded-full flex items-center justify-center bg-muted"
-                style={{ 
-                  backgroundColor: alert.type === 'CG' ? 'var(--chart-2)' : 'var(--chart-1)',
-                  opacity: 0.2
-                }}
-              >
-                <Zap 
-                  className="h-4 w-4" 
-                  style={{ color: alert.type === 'CG' ? 'var(--chart-2)' : 'var(--chart-1)' }}
-                />
+        {recent.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Aucun impact pour l'instant</p>
+        ) : (
+          <div className="space-y-4">
+            {recent.map((flash) => (
+              <div key={flash.rank} className="flex items-center">
+                <div
+                  className="h-9 w-9 rounded-full flex items-center justify-center"
+                  style={{
+                    backgroundColor: flash.flash_type === "CG" ? "var(--chart-2)" : "var(--chart-1)",
+                    opacity: 0.85,
+                  }}
+                >
+                  <Zap className="h-4 w-4 text-white" />
+                </div>
+                <div className="ml-4 space-y-0.5 flex-1 min-w-0">
+                  <p className="text-sm font-medium leading-none text-foreground">
+                    {flash.lat.toFixed(4)}, {flash.lon.toFixed(4)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {flash.dist_km.toFixed(1)} km •{" "}
+                    <span className="font-semibold">{flash.flash_type}</span>
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-mono text-muted-foreground">
+                    {new Date(flash.date).toLocaleTimeString("fr-FR", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                  <p className="text-xs font-semibold" style={{ color: flash.score > 0.5 ? "var(--chart-1)" : "var(--muted-foreground)" }}>
+                    {(flash.score * 100).toFixed(0)}%
+                  </p>
+                </div>
               </div>
-              <div className="ml-4 space-y-1 flex-1">
-                <p className="text-sm font-medium leading-none text-foreground">{alert.coord}</p>
-                <p className="text-sm text-muted-foreground">
-                  {alert.loc} • <span className="font-semibold">{alert.type}</span>
-                </p>
-              </div>
-              <div className="text-sm font-medium text-muted-foreground">{alert.time}</div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   )
