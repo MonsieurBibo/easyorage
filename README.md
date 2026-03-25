@@ -7,9 +7,8 @@ Prédiction de fin d'alerte orage pour 5 aéroports, à partir de données foudr
 **Backend**
 
 ```bash
-cd backend
-uv sync
-uv run uvicorn backend.main:app --reload
+uv sync --project backend
+uv run --project backend uvicorn backend.main:app --reload
 ```
 
 **Frontend**
