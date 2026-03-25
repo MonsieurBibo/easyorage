@@ -10,6 +10,12 @@ frontend.7z
 models/*.joblib
 models/*.db
 models/*.pkl
+models/*.pt
+
+# Data générée
+data/terrain/*.npy
+data/weather/
+data/processed/test_scored.parquet
 
 # Logs
 logs/
