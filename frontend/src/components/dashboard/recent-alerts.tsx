@@ -1,6 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Zap } from "lucide-react"
-import { useLiveData } from "@/context/LiveDataContext"
+import { useLiveData } from "@/hooks/useLiveData"
 
 export function RecentAlerts() {
   const { flashes } = useLiveData()

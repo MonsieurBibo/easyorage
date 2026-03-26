@@ -9,13 +9,12 @@ import {
   MapLayers,
   MapLayersControl,
   MapFullscreenControl,
-  MapMarkerClusterGroup,
   MapTooltip,
 } from "@/components/ui/map"
 import { Zap } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { useLiveData } from "@/context/LiveDataContext"
+import { useLiveData } from "@/hooks/useLiveData"
 
 export const LiveMap = () => {
   const { flashes, currentAirport } = useLiveData()
@@ -39,34 +38,32 @@ export const LiveMap = () => {
           </MapLayerGroup>
 
           <MapLayerGroup name="Impacts récents">
-            <MapMarkerClusterGroup>
-              {flashes.map((flash) => (
-                <MapMarker
-                  key={flash.rank}
-                  position={[flash.lat, flash.lon]}
-                  icon={
-                    <Zap
-                      className="size-6"
-                      style={{
-                        color: flash.flash_type === "CG" ? "var(--chart-2)" : "var(--chart-1)",
-                        fill: flash.flash_type === "CG" ? "var(--chart-2)" : "var(--chart-1)",
-                        filter: "drop-shadow(0 0 4px rgba(0,0,0,0.5))",
-                      }}
-                    />
-                  }
-                >
-                  <MapPopup>
-                    <div className="flex flex-col gap-1 text-center">
-                      <p className="font-bold text-sm">Impact {flash.flash_type === "CG" ? "Nuage-Sol" : "Intra-Nuage"}</p>
-                      <p className="text-xs text-muted-foreground">{new Date(flash.date).toLocaleTimeString("fr-FR", { timeZone: "UTC" })} UTC</p>
-                      <p className="text-xs text-muted-foreground">{flash.lat.toFixed(4)}, {flash.lon.toFixed(4)}</p>
-                      <p className="text-xs text-muted-foreground">Distance : {flash.dist_km.toFixed(1)} km</p>
-                      <p className="text-xs font-semibold">Score : {(flash.score * 100).toFixed(0)}%</p>
-                    </div>
-                  </MapPopup>
-                </MapMarker>
-              ))}
-            </MapMarkerClusterGroup>
+            {flashes.map((flash) => (
+              <MapMarker
+                key={flash.rank}
+                position={[flash.lat, flash.lon]}
+                icon={
+                  <Zap
+                    className="size-6"
+                    style={{
+                      color: flash.flash_type === "CG" ? "var(--chart-2)" : "var(--chart-1)",
+                      fill: flash.flash_type === "CG" ? "var(--chart-2)" : "var(--chart-1)",
+                      filter: "drop-shadow(0 0 4px rgba(0,0,0,0.5))",
+                    }}
+                  />
+                }
+              >
+                <MapPopup>
+                  <div className="flex flex-col gap-1 text-center">
+                    <p className="font-bold text-sm">Impact {flash.flash_type === "CG" ? "Nuage-Sol" : "Intra-Nuage"}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(flash.date).toLocaleTimeString("fr-FR", { timeZone: "UTC" })} UTC</p>
+                    <p className="text-xs text-muted-foreground">{flash.lat.toFixed(4)}, {flash.lon.toFixed(4)}</p>
+                    <p className="text-xs text-muted-foreground">Distance : {flash.dist_km.toFixed(1)} km</p>
+                    <p className="text-xs font-semibold">Score : {(flash.score * 100).toFixed(0)}%</p>
+                  </div>
+                </MapPopup>
+              </MapMarker>
+            ))}
           </MapLayerGroup>
 
           <MapLayersControl position="top-1 right-1" className="mt-2 mr-2" />
