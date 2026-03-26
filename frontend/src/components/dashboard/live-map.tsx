@@ -24,7 +24,7 @@ export const LiveMap = () => {
     : [46.2276, 2.2137]
 
   return (
-    <div className="col-span-6 relative w-full h-[600px] rounded-xl overflow-hidden border border-border bg-card shadow-sm">
+    <div className="col-span-6 relative w-full h-full min-h-[300px] md:min-h-[400px] rounded-xl overflow-hidden border border-border bg-card shadow-sm">
       <Map center={center} zoom={11} className="z-0 h-full w-full">
         <MapLayers defaultLayerGroups={["Zones de sécurité", "Impacts récents"]}>
           <MapTileLayer name="Standard" />

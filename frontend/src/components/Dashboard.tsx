@@ -59,18 +59,18 @@ export function Dashboard() {
   const airportLabel = currentAirport?.name ?? selectedAirport
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Dashboard - {airportLabel}</h2>
+    <div className="flex flex-col h-full max-h-full space-y-3">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 flex-shrink-0">
+        <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Dashboard - {airportLabel}</h2>
 
         {/* Speed selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Vitesse :</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-xs text-muted-foreground">Vitesse :</span>
           {SPEEDS.map((s) => (
             <button
               key={s}
               onClick={() => setSpeed(s)}
-              className={`px-2.5 py-1 rounded text-xs font-mono border transition-colors ${
+              className={`px-2 py-0.5 rounded text-xs font-mono border transition-colors ${
                 speed === s
                   ? "bg-primary text-primary-foreground border-primary"
                   : "border-border text-muted-foreground hover:bg-muted"
@@ -82,7 +82,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 flex-shrink-0">
         <StatCard
           title="Probabilité de fin"
           value={scoreStr}
@@ -117,7 +117,7 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-8">
+      <div className="grid gap-3 grid-cols-1 lg:grid-cols-8 flex-1 min-h-0">
         <LiveMap />
         <RecentAlerts />
       </div>
