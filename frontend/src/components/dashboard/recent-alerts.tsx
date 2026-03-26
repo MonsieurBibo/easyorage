@@ -4,14 +4,14 @@ import { useLiveData } from "@/hooks/useLiveData"
 
 export function RecentAlerts() {
   const { flashes } = useLiveData()
-  const recent = [...flashes].reverse().slice(0, 8)
+  const recent = flashes ? [...flashes].reverse().slice(0, 8) : []
 
   return (
     <Card className="col-span-1 lg:col-span-2 border-border bg-card flex flex-col h-full">
       <CardHeader className="flex-shrink-0 py-2 px-3">
         <CardTitle className="text-xs font-medium text-foreground">Alertes récentes</CardTitle>
         <CardDescription className="text-[10px] text-muted-foreground">
-          {flashes.length > 0 ? `${flashes.length} impacts reçus` : "En attente d'impacts…"}
+          {flashes && flashes.length > 0 ? `${flashes.length} impacts reçus` : "En attente d'impacts…"}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-1 overflow-auto p-0 px-3 pb-2">
