@@ -1,7 +1,8 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ChevronDown } from "lucide-react"
 import { ThemeSwitcher } from "@/components/ui/mode-toogle"
-import { useLiveData } from "@/context/LiveDataContext"
+import { Link } from "@tanstack/react-router"
+import { useLiveData } from "@/hooks/useLiveData"
 import { useState, useRef, useEffect } from "react"
 
 export function DashboardHeader() {
@@ -50,11 +51,10 @@ export function DashboardHeader() {
           )}
         </div>
 
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
-          <a href="#" className="text-foreground hover:text-primary">Dashboard</a>
-          <a href="#" className="text-muted-foreground hover:text-primary">Analyses</a>
-          <a href="#" className="text-muted-foreground hover:text-primary">Historique</a>
-          <a href="#" className="text-muted-foreground hover:text-primary">Paramètres</a>
+        <nav className="flex items-center gap-6 text-sm font-medium">
+          <Link to="/" className="text-foreground hover:text-primary [&.active]:font-bold">Dashboard</Link>
+          <Link to="/analytics" className="text-muted-foreground hover:text-primary [&.active]:font-bold [&.active]:text-foreground">Statistiques</Link>
+          <Link to="/reports" className="text-muted-foreground hover:text-primary [&.active]:font-bold [&.active]:text-foreground">Rapports d'alerte</Link>
         </nav>
 
         <div className="ml-auto flex items-center gap-4">
