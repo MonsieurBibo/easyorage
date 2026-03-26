@@ -5,6 +5,8 @@ dataset_test/
 dataset_test.zip
 data_train_databattle2026/
 frontend.7z
+segment_alerts_all_airports_eval.csv
+data.zip
 
 # Models (binaires)
 models/*.joblib

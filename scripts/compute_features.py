@@ -344,6 +344,54 @@ def compute_features(df: pl.DataFrame) -> pl.DataFrame:
         ).alias("sigma_level"),
     ).drop("_dfr")
 
+    # ── 6b. centroïde relatif à l'aéroport ────────────────────────────────────
+    # centroid_dist_5/10 : distance aéroport→centroïde des N derniers éclairs (km)
+    # ≠ rolling_dist_5 (moyenne des distances individuelles)
+    # Exemple : 5 éclairs répartis autour de l'aéroport → rolling_dist_5≈10km, centroid_dist≈0
+    # centroid_dist_trend > 0 : le centroïde s'éloigne → orage qui part
+    # drift_radial > 0 : le déplacement du centroïde va dans la direction "loin de l'aéroport"
+    import math as _math
+    _AIRPORT_COORDS = {
+        "Ajaccio":  (41.9236,  8.8017),
+        "Bastia":   (42.5527,  9.4837),
+        "Biarritz": (43.4680, -1.5302),
+        "Nantes":   (47.1532, -1.6106),
+        "Pise":     (43.6839, 10.3927),
+    }
+    _lat_ap  = pl.lit(None, dtype=pl.Float64)
+    _lon_ap  = pl.lit(None, dtype=pl.Float64)
+    _cos_lat = pl.lit(None, dtype=pl.Float64)
+    for _ap, (_la, _lo) in _AIRPORT_COORDS.items():
+        _lat_ap  = pl.when(pl.col("airport") == _ap).then(pl.lit(_la)).otherwise(_lat_ap)
+        _lon_ap  = pl.when(pl.col("airport") == _ap).then(pl.lit(_lo)).otherwise(_lon_ap)
+        _cos_lat = pl.when(pl.col("airport") == _ap).then(pl.lit(_math.cos(_math.radians(_la)))).otherwise(_cos_lat)
+
+    df6 = (
+        df6
+        .with_columns(_lat_ap.alias("_lat_ap"), _lon_ap.alias("_lon_ap"), _cos_lat.alias("_cos_lat"))
+        .with_columns(
+            (pl.col("rolling_lat_5")  - pl.col("_lat_ap")).alias("_dlat5"),
+            (pl.col("rolling_lon_5")  - pl.col("_lon_ap")).alias("_dlon5"),
+            (pl.col("rolling_lat_10") - pl.col("_lat_ap")).alias("_dlat10"),
+            (pl.col("rolling_lon_10") - pl.col("_lon_ap")).alias("_dlon10"),
+        )
+        .with_columns(
+            (((pl.col("_dlat5")  * 111) ** 2 + (pl.col("_dlon5")  * 111 * pl.col("_cos_lat")) ** 2) ** 0.5).alias("centroid_dist_5"),
+            (((pl.col("_dlat10") * 111) ** 2 + (pl.col("_dlon10") * 111 * pl.col("_cos_lat")) ** 2) ** 0.5).alias("centroid_dist_10"),
+        )
+        .with_columns(
+            # Tendance : positif = centroïde s'éloigne de l'aéroport
+            (pl.col("centroid_dist_5") - pl.col("centroid_dist_10")).alias("centroid_dist_trend"),
+            # Composante radiale du drift : dot(drift, dir_away) × 111 km/deg
+            # Positif = centroïde se déplace en s'éloignant de l'aéroport
+            (
+                (pl.col("lat_drift") * pl.col("_dlat5") + pl.col("lon_drift") * pl.col("_dlon5"))
+                / (((pl.col("_dlat5") ** 2 + pl.col("_dlon5") ** 2) ** 0.5) + 1e-6)
+            ).alias("drift_radial"),
+        )
+        .drop(["_lat_ap", "_lon_ap", "_cos_lat", "_dlat5", "_dlon5", "_dlat10", "_dlon10"])
+    )
+
     # ── 7. MIFI percentile — percentiles causaux intra-alerte ─────────────────
     # ILI max normalisé par le percentile courant de l'alerte (causal, sans lookahead).
     # Pour chaque éclair i, P75/P95 = percentile des ILI vus depuis le début de l'alerte.
@@ -582,6 +630,11 @@ LIGHTNING_FEATURE_COLS = [
     "ic_cg_ratio",
     # tracking centroïde (déplacement de l'orage)
     "lat_drift", "lon_drift", "centroid_speed_km",
+    # centroïde relatif à l'aéroport (nouveauté)
+    # centroid_dist_5/10 ≠ rolling_dist_5/10 : distance du CENTROÏDE, pas moyenne des distances
+    # centroid_dist_trend > 0 = orage qui s'éloigne → cessation probable
+    # drift_radial > 0 = mouvement centroïde dans direction "away from airport"
+    "centroid_dist_5", "centroid_dist_10", "centroid_dist_trend", "drift_radial",
     # surface spatiale et densité (dissipation = contraction)
     "spatial_bbox_km2", "flash_density_km2",
     # sigma_level : taux de décroissance normalisé (lightning crash)

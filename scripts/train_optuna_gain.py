@@ -14,9 +14,9 @@
 """
 Optuna XGBoost — optimisation directe sur Gain G (métrique officielle).
 
-Objectif : maximiser le Gain G sur l'eval split, sous contrainte Risk R < 0.02.
-Contrairement à train_optuna_xgb.py (optimise AUC), ici on optimise directement
-la métrique du concours : secondes gagnées vs baseline 30 min.
+Objectif : maximiser le Gain G sur l'eval local (2016-2022), sous contrainte Risk R < 0.02.
+Le modèle est entraîné sur train (2016-2022) uniquement.
+NOTE : on n'optimise PAS sur l'eval officiel (2023-2025) car il contient le test set → leakage.
 
 Tune aussi K et base_threshold (stratégie K-consécutifs).
 
@@ -39,7 +39,7 @@ PROC  = ROOT / "data" / "processed"
 MODEL = ROOT / "models"
 MODEL.mkdir(exist_ok=True)
 
-N_TRIALS    = 60
+N_TRIALS    = 200
 R_ACCEPT    = 0.02
 MAX_GAP_MIN = 30
 MIN_DIST_KM = 3
@@ -157,19 +157,20 @@ def best_gain_under_risk(preds_df: pd.DataFrame, base_threshold: float = 0.0) ->
 # ── Objective Optuna ──────────────────────────────────────────────────────────
 def objective(trial):
     params = dict(
-        n_estimators     = trial.suggest_int("n_estimators", 200, 700),
-        max_depth        = trial.suggest_int("max_depth", 3, 7),
+        n_estimators     = trial.suggest_int("n_estimators", 100, 600),
+        max_depth        = trial.suggest_int("max_depth", 3, 5),   # limité pour éviter overfit AUC train=1.0
         learning_rate    = trial.suggest_float("learning_rate", 0.01, 0.15, log=True),
-        subsample        = trial.suggest_float("subsample", 0.5, 1.0),
-        colsample_bytree = trial.suggest_float("colsample_bytree", 0.5, 1.0),
-        min_child_weight = trial.suggest_int("min_child_weight", 1, 10),
-        gamma            = trial.suggest_float("gamma", 0, 3),
-        reg_alpha        = trial.suggest_float("reg_alpha", 0, 1),
+        subsample        = trial.suggest_float("subsample", 0.5, 0.9),
+        colsample_bytree = trial.suggest_float("colsample_bytree", 0.5, 0.9),
+        min_child_weight = trial.suggest_int("min_child_weight", 3, 20),  # plus grand = moins overfit
+        gamma            = trial.suggest_float("gamma", 0, 5),
+        reg_alpha        = trial.suggest_float("reg_alpha", 0, 3),
+        reg_lambda       = trial.suggest_float("reg_lambda", 0.5, 5),
         scale_pos_weight = pos_weight,
         verbosity=0, random_state=42,
     )
-    k               = trial.suggest_int("k", 2, 5)
-    base_threshold  = trial.suggest_float("base_threshold", 0.15, 0.5)
+    k               = trial.suggest_int("k", 2, 3)
+    base_threshold  = trial.suggest_float("base_threshold", 0.10, 0.45)
 
     m = xgb.XGBClassifier(**params)
     m.fit(X_tr, y_tr)

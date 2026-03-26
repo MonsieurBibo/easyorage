@@ -203,15 +203,18 @@ def get_alert(airport: str, alert_id: str) -> dict | None:
 
 
 def get_default_alert(airport: str) -> dict | None:
-    """Retourne l'alerte la plus intéressante pour la démo :
-    parmi les alertes avec prédiction déclenchée, celle avec le plus d'éclairs."""
+    """Retourne une alerte aléatoire parmi celles avec ≥ 25 éclairs et prédiction déclenchée."""
+    import random
     alerts = _alerts_cache.get(airport.lower(), [])
     if not alerts:
         return None
-    with_pred = [a for a in alerts if a["prediction"] is not None and a["n_flashes"] >= 10]
-    if with_pred:
-        return max(with_pred, key=lambda a: a["n_flashes"])
-    return max(alerts, key=lambda a: a["n_flashes"])
+    candidates = [a for a in alerts if a["prediction"] is not None and a["n_flashes"] >= 25]
+    if candidates:
+        return random.choice(candidates)
+    fallback = [a for a in alerts if a["n_flashes"] >= 25]
+    if fallback:
+        return random.choice(fallback)
+    return random.choice(alerts)
 
 
 def get_stats(airport: str) -> dict:
