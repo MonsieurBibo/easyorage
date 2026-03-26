@@ -15,13 +15,53 @@ import { Zap } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { useLiveData } from "@/hooks/useLiveData"
+import { useMemo, useEffect, useState } from "react"
+
+// opacity decay configuration
+const OPACITY_DECAY_PER_FLASH = 0.03    // 3% opacity loss per flash age
+const MIN_OPACITY = 0.35                // 35% minimum (still visible but faded)
+const MAX_OPACITY = 1.0
 
 export const LiveMap = () => {
   const { flashes, currentAirport } = useLiveData()
+  const [, forceUpdate] = useState(0)
+
+  console.log(flashes) 
+
+  // force re-render every minute to update opacities
+  useEffect(() => {
+    const interval = setInterval(() => {
+      forceUpdate(n => n + 1)
+    }, 60000) // Update every minute
+
+    return () => clearInterval(interval)
+  }, [])
 
   const center: [number, number] = currentAirport
     ? [currentAirport.lat, currentAirport.lon]
     : [46.2276, 2.2137]
+
+  // calculate opacity based on flash age RELATIVE to the replay - in real time, the most recent flash is always rank 0, and older flashes have higher ranks.
+  // Most recent flash = 100% opacity, older flashes fade out
+  const flashMarkers = useMemo(() => {
+    if (flashes.length === 0) return []
+    
+    const mostRecentRank = Math.max(...flashes.map(f => f.rank))
+    
+    return flashes.map((flash) => {
+      // Age = how many flashes ago this one appeared
+      const ageInFlashes = mostRecentRank - flash.rank
+      
+      // Decay based on number of flashes since this one appeared
+      const opacity = MAX_OPACITY - (ageInFlashes * OPACITY_DECAY_PER_FLASH)
+      const clampedOpacity = Math.max(MIN_OPACITY, Math.min(MAX_OPACITY, opacity))
+      
+      return {
+        flash,
+        opacity: clampedOpacity,
+      }
+    })
+  }, [flashes])
 
   return (
     <div className="col-span-6 relative w-full h-full min-h-[300px] md:min-h-[400px] rounded-xl overflow-hidden border border-border bg-card shadow-sm">
@@ -38,7 +78,7 @@ export const LiveMap = () => {
           </MapLayerGroup>
 
           <MapLayerGroup name="Impacts récents">
-            {flashes.map((flash) => (
+            {flashMarkers.map(({ flash, opacity }) => (
               <MapMarker
                 key={flash.rank}
                 position={[flash.lat, flash.lon]}
@@ -48,7 +88,8 @@ export const LiveMap = () => {
                     style={{
                       color: flash.flash_type === "CG" ? "var(--chart-2)" : "var(--chart-1)",
                       fill: flash.flash_type === "CG" ? "var(--chart-2)" : "var(--chart-1)",
-                      filter: "drop-shadow(0 0 4px rgba(0,0,0,0.5))",
+                      opacity: opacity,
+                      filter: `drop-shadow(0 0 4px rgba(0,0,0,${0.5 * opacity}))`,
                     }}
                   />
                 }
