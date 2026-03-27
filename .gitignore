@@ -50,6 +50,7 @@ backend/.venv/
 .DS_Store
 Thumbs.db
 
-# Jupyter
+# Jupyter / Marimo
 .ipynb_checkpoints/
 notebooks/.ipynb_checkpoints/
+notebooks/__marimo__/
